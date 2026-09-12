@@ -23,11 +23,12 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from config import DB_PATH, VALID_TRANSITIONS
+import re
+from config import DB_PATH, DATABASE_URL, VALID_TRANSITIONS
 
 
 # ============================================================
-# Schema DDL — Updated with Tier 1 passive gate fields
+# Schema DDL — Updated with Follower Tiering & Outreach Type
 # ============================================================
 
 SCHEMA_DDL = """
@@ -68,6 +69,8 @@ CREATE TABLE IF NOT EXISTS leads (
 
     -- Stage 4: Deterministic Activity Gate
     linkedin_connection_count INTEGER,
+    follower_count INTEGER,                   -- Parsed follower count (e.g. 4000, 22000)
+    follower_tier TEXT,                       -- 'SWEET_SPOT_500_5K', 'OVER_5K', 'UNDER_500', 'UNKNOWN'
     has_active_role BOOLEAN,
     last_activity_date DATE,
     last_activity_days_ago INTEGER,
@@ -83,6 +86,7 @@ CREATE TABLE IF NOT EXISTS leads (
     -- Stage 6: Outreach & Lifecycle
     queued_at TIMESTAMP,
     sent_at TIMESTAMP,
+    outreach_type TEXT,                       -- 'blank', 'custom_note'
     connection_accepted_at TIMESTAMP,
     first_reply_at TIMESTAMP,
     rejection_reason TEXT,
@@ -150,10 +154,139 @@ def init_db(db_path: str | None = None) -> None:
         conn.execute("ALTER TABLE leads ADD COLUMN linkedin_headline TEXT")
     if "founder_profile_details" not in existing_cols:
         conn.execute("ALTER TABLE leads ADD COLUMN founder_profile_details TEXT")
+    if "follower_count" not in existing_cols:
+        conn.execute("ALTER TABLE leads ADD COLUMN follower_count INTEGER")
+    if "follower_tier" not in existing_cols:
+        conn.execute("ALTER TABLE leads ADD COLUMN follower_tier TEXT")
+    if "outreach_type" not in existing_cols:
+        conn.execute("ALTER TABLE leads ADD COLUMN outreach_type TEXT")
         
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_leads_follower_tier ON leads(follower_tier)")
     conn.commit()
+
+    # Automatically backfill follower tiers on startup if needed
+    backfill_follower_tiers(conn)
+
     conn.close()
     print(f"[OK] Database initialized: {db_path or DB_PATH}")
+
+
+# ============================================================
+# Follower & Audience Parsing and Classification
+# ============================================================
+
+def parse_numeric_with_multiplier(raw_str: str, mult: str | None) -> int | None:
+    """Parse numeric string with optional K/M multiplier into an integer."""
+    cleaned = raw_str.replace(",", "").strip()
+    if not cleaned:
+        return None
+    try:
+        val = float(cleaned)
+        if mult:
+            m = mult.lower()
+            if m == "k":
+                val *= 1000
+            elif m == "m":
+                val *= 1000000
+        return int(val)
+    except Exception:
+        return None
+
+
+def extract_audience_numbers(text: str | None) -> tuple[int | None, int | None, str]:
+    """
+    Parse follower and connection counts from snippet or profile text.
+    Returns: (follower_count, connection_count, follower_tier)
+    Tiers:
+      - 'SWEET_SPOT_500_5K': 500+ connections up to 5,000 followers
+      - 'OVER_5K': > 5,000 followers / connections (Celebrity/Macro accounts to avoid)
+      - 'UNDER_500': < 500 connections / followers
+      - 'UNKNOWN': No follower or connection data in snippet
+    """
+    if not text:
+        return None, None, "UNKNOWN"
+
+    followers = None
+    connections = None
+
+    # Follower match (e.g. "22K followers", "4,500 followers", "93k followers")
+    f_match = re.search(r'(\d+(?:[\.,]\d+)?)\s*([kKmM])?\+?\s*followers?', text, re.IGNORECASE)
+    if f_match:
+        followers = parse_numeric_with_multiplier(f_match.group(1), f_match.group(2))
+
+    # Connection match (e.g. "500+ connections", "388 connections")
+    if "500+ connections" in text.lower():
+        connections = 500
+    else:
+        c_match = re.search(r'(\d+(?:[\.,]\d+)?)\s*([kKmM])?\+?\s*connections?', text, re.IGNORECASE)
+        if c_match:
+            connections = parse_numeric_with_multiplier(c_match.group(1), c_match.group(2))
+
+    # Classify tier
+    # Primary signal is followers if specified, otherwise connections
+    effective = followers if followers is not None else connections
+
+    if effective is None:
+        tier = "UNKNOWN"
+    elif effective > 5000:
+        tier = "OVER_5K"
+    elif effective >= 500:
+        tier = "SWEET_SPOT_500_5K"
+    else:
+        tier = "UNDER_500"
+
+    return followers, connections, tier
+
+
+def backfill_follower_tiers(conn: sqlite3.Connection) -> dict[str, int]:
+    """
+    Backfill follower_count and follower_tier for existing leads where follower_tier IS NULL.
+    """
+    cur = conn.execute(
+        "SELECT id, search_dork_snippet, founder_profile_details, linkedin_connection_count "
+        "FROM leads WHERE follower_tier IS NULL"
+    )
+    rows = cur.fetchall()
+    if not rows:
+        return {"updated": 0}
+
+    updated_count = 0
+    tier_counts = {"SWEET_SPOT_500_5K": 0, "OVER_5K": 0, "UNDER_500": 0, "UNKNOWN": 0}
+
+    for row in rows:
+        lead_id = row["id"]
+        snippet = row["search_dork_snippet"] or ""
+        details = row["founder_profile_details"] or ""
+        combined = f"{snippet} {details}"
+        existing_conn = row["linkedin_connection_count"]
+
+        followers, connections, tier = extract_audience_numbers(combined)
+        if existing_conn and connections is None:
+            connections = existing_conn
+            if followers is None and connections:
+                if connections > 5000:
+                    tier = "OVER_5K"
+                elif connections >= 500:
+                    tier = "SWEET_SPOT_500_5K"
+                else:
+                    tier = "UNDER_500"
+
+        conn.execute(
+            """
+            UPDATE leads
+            SET follower_count = ?,
+                linkedin_connection_count = COALESCE(?, linkedin_connection_count),
+                follower_tier = ?
+            WHERE id = ?
+            """,
+            (followers, connections, tier, lead_id),
+        )
+        tier_counts[tier] = tier_counts.get(tier, 0) + 1
+        updated_count += 1
+
+    conn.commit()
+    print(f"[OK] Backfilled follower tiers for {updated_count} leads: {tier_counts}")
+    return {"updated": updated_count, "tiers": tier_counts}
 
 
 # ============================================================
@@ -315,6 +448,250 @@ def print_funnel_summary(conn: sqlite3.Connection) -> None:
                 print(f"  [*] {status:<22} {count:>5}  {bar}")
 
     print("=" * 60 + "\n")
+
+
+# ============================================================
+# Portal Query & Mutation Helpers
+# ============================================================
+
+def get_follower_tier_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """Get count of leads by follower tier."""
+    rows = conn.execute(
+        "SELECT COALESCE(follower_tier, 'UNKNOWN') as tier, COUNT(*) as cnt "
+        "FROM leads GROUP BY follower_tier"
+    ).fetchall()
+    counts = {"SWEET_SPOT_500_5K": 0, "OVER_5K": 0, "UNDER_500": 0, "UNKNOWN": 0}
+    for row in rows:
+        counts[row["tier"]] = row["cnt"]
+    return counts
+
+
+def get_pipeline_stats(conn: sqlite3.Connection) -> dict:
+    """Consolidated telemetry and funnel statistics for the portal dashboard."""
+    status_counts = get_leads_by_status(conn)
+    total = get_total_leads_count(conn)
+    tier_counts = get_follower_tier_counts(conn)
+
+    places_spend = get_cumulative_spend(conn, "google_places")
+    bing_spend = get_cumulative_spend(conn, "bing_search")
+    serper_spend = get_cumulative_spend(conn, "serper_google")
+    ai_spend = get_cumulative_spend(conn, "azure_openai")
+    total_spend = places_spend + bing_spend + serper_spend + ai_spend
+
+    # Sent counts today and all-time
+    sent_all = status_counts.get("SENT", 0)
+    accepted_all = status_counts.get("ACCEPTED", 0)
+    queued_all = status_counts.get("QUEUED", 0)
+    discovered_all = status_counts.get("DISCOVERED", 0)
+    enriched_all = status_counts.get("ENRICHED", 0)
+    qualified_all = status_counts.get("QUALIFIED_ACTIVE", 0)
+
+    sent_today_row = conn.execute(
+        "SELECT COUNT(*) FROM leads WHERE status IN ('SENT', 'ACCEPTED') AND DATE(sent_at) = DATE('now')"
+    ).fetchone()
+    sent_today = sent_today_row[0] if sent_today_row else 0
+
+    return {
+        "total_leads": total,
+        "status_counts": status_counts,
+        "follower_tiers": tier_counts,
+        "queued_count": queued_all,
+        "sent_count": sent_all,
+        "accepted_count": accepted_all,
+        "sent_today": sent_today,
+        "spend": {
+            "google_places": places_spend,
+            "bing_search": bing_spend,
+            "serper": serper_spend,
+            "azure_openai": ai_spend,
+            "total": total_spend,
+            "places_budget_cap": 10.0,
+        },
+    }
+
+
+def get_leads_paginated(
+    conn: sqlite3.Connection,
+    status: str | None = None,
+    follower_tier: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """
+    Query leads with filtering, search, and pagination.
+    Returns: (list_of_leads, total_matching_count)
+    """
+    where_clauses = []
+    params = []
+
+    if status and status.upper() != "ALL":
+        where_clauses.append("status = ?")
+        params.append(status.upper())
+
+    if follower_tier and follower_tier.upper() != "ALL":
+        where_clauses.append("follower_tier = ?")
+        params.append(follower_tier.upper())
+
+    if search:
+        search_pattern = f"%{search.strip()}%"
+        where_clauses.append(
+            "(business_name LIKE ? OR founder_name LIKE ? OR city LIKE ? OR domain LIKE ?)"
+        )
+        params.extend([search_pattern, search_pattern, search_pattern, search_pattern])
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    # Count matching
+    count_sql = f"SELECT COUNT(*) FROM leads {where_sql}"
+    total_matching = conn.execute(count_sql, params).fetchone()[0]
+
+    # Fetch rows
+    fetch_sql = f"""
+        SELECT id, status, business_name, city, domain, website_status,
+               founder_name, founder_title, extraction_confidence,
+               linkedin_url, linkedin_headline, follower_count,
+               linkedin_connection_count, follower_tier,
+               activity_check_status, personalized_note, note_char_count,
+               ab_variant, outreach_type, queued_at, sent_at, created_at
+        FROM leads
+        {where_sql}
+        ORDER BY
+            CASE status
+                WHEN 'QUEUED' THEN 1
+                WHEN 'QUALIFIED_ACTIVE' THEN 2
+                WHEN 'LINKEDIN_RESOLVED' THEN 3
+                WHEN 'ENRICHED' THEN 4
+                WHEN 'DISCOVERED' THEN 5
+                WHEN 'SENT' THEN 6
+                WHEN 'ACCEPTED' THEN 7
+                ELSE 8
+            END ASC,
+            created_at DESC
+        LIMIT ? OFFSET ?
+    """
+    fetch_params = params + [limit, offset]
+    rows = conn.execute(fetch_sql, fetch_params).fetchall()
+    leads = [dict(row) for row in rows]
+
+    return leads, total_matching
+
+
+def get_lead_details(conn: sqlite3.Connection, lead_id: str) -> dict | None:
+    """Fetch complete lead record and state transition history."""
+    row = conn.execute("SELECT * FROM leads WHERE id = ?", (lead_id,)).fetchone()
+    if not row:
+        return None
+
+    lead = dict(row)
+
+    # Fetch transitions
+    t_rows = conn.execute(
+        """
+        SELECT from_status, to_status, triggered_by_stage, reason, created_at
+        FROM state_transitions
+        WHERE lead_id = ?
+        ORDER BY created_at ASC
+        """,
+        (lead_id,),
+    ).fetchall()
+    lead["transitions"] = [dict(t) for t in t_rows]
+
+    return lead
+
+
+def get_queued_leads(
+    conn: sqlite3.Connection,
+    limit: int = 15,
+    follower_tier: str | None = None,
+) -> list[dict]:
+    """Fetch leads ready for dispatch in Stage 6 mobile queue."""
+    where = ["status = 'QUEUED'"]
+    params = []
+
+    if follower_tier and follower_tier.upper() != "ALL":
+        where.append("follower_tier = ?")
+        params.append(follower_tier.upper())
+
+    sql = f"""
+        SELECT id, business_name, city, domain, founder_name, founder_title,
+               linkedin_url, linkedin_headline, follower_count,
+               linkedin_connection_count, follower_tier,
+               personalized_note, note_char_count, ab_variant,
+               business_summary, queued_at
+        FROM leads
+        WHERE {' AND '.join(where)}
+        ORDER BY queued_at ASC, created_at ASC
+        LIMIT ?
+    """
+    params.append(limit)
+    rows = conn.execute(sql, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_accepted_leads(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
+    """Fetch leads who accepted connections for post-connection conversation."""
+    sql = """
+        SELECT id, business_name, city, domain, founder_name, founder_title,
+               linkedin_url, linkedin_headline, follower_count,
+               follower_tier, personalized_note, business_summary,
+               connection_accepted_at, sent_at
+        FROM leads
+        WHERE status = 'ACCEPTED'
+        ORDER BY connection_accepted_at DESC, sent_at DESC
+        LIMIT ?
+    """
+    rows = conn.execute(sql, (limit,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def mark_lead_sent(
+    conn: sqlite3.Connection,
+    lead_id: str,
+    outreach_type: str = "blank",
+) -> dict:
+    """Mark a QUEUED lead as SENT with outreach type (blank or custom_note)."""
+    row = conn.execute("SELECT status FROM leads WHERE id = ?", (lead_id,)).fetchone()
+    if not row:
+        raise ValueError("Lead not found")
+    if row["status"] != "QUEUED":
+        raise ValueError(f"Lead status is {row['status']}, expected QUEUED")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update_lead_status(
+        conn,
+        lead_id=lead_id,
+        from_status="QUEUED",
+        to_status="SENT",
+        triggered_by="portal_mobile_queue",
+        reason=f"manual_dispatch_{outreach_type}",
+        sent_at=now_iso,
+        outreach_type=outreach_type,
+    )
+    conn.commit()
+    return {"id": lead_id, "status": "SENT", "outreach_type": outreach_type, "sent_at": now_iso}
+
+
+def mark_lead_accepted(conn: sqlite3.Connection, lead_id: str) -> dict:
+    """Mark a SENT lead as ACCEPTED when connection is approved on LinkedIn."""
+    row = conn.execute("SELECT status FROM leads WHERE id = ?", (lead_id,)).fetchone()
+    if not row:
+        raise ValueError("Lead not found")
+    if row["status"] != "SENT":
+        raise ValueError(f"Lead status is {row['status']}, expected SENT")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update_lead_status(
+        conn,
+        lead_id=lead_id,
+        from_status="SENT",
+        to_status="ACCEPTED",
+        triggered_by="portal_mobile_queue",
+        reason="connection_accepted_by_lead",
+        connection_accepted_at=now_iso,
+    )
+    conn.commit()
+    return {"id": lead_id, "status": "ACCEPTED", "connection_accepted_at": now_iso}
 
 
 # ============================================================

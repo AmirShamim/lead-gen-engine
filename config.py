@@ -216,13 +216,21 @@ JARGON_BLACKLIST = [
 ]
 
 # ============================================================
-# Stage 6: Mobile Queue Server
+# Portal & Stage 6: Mobile Queue Server
 # ============================================================
 QUEUE_DAILY_LIMIT = int(os.getenv("QUEUE_DAILY_LIMIT", "15"))
 QUEUE_HOST = os.getenv("QUEUE_HOST", "0.0.0.0")
-QUEUE_PORT = int(os.getenv("QUEUE_PORT", "8000"))
-QUEUE_AUTH_USERNAME = os.getenv("QUEUE_AUTH_USERNAME", "admin")
-QUEUE_AUTH_PASSWORD = os.getenv("QUEUE_AUTH_PASSWORD", "change_me_in_production")
+QUEUE_PORT = int(os.getenv("PORT", os.getenv("QUEUE_PORT", "8000")))  # Azure App Service passes $PORT
+PORTAL_AUTH_USERNAME = os.getenv("PORTAL_AUTH_USERNAME", os.getenv("QUEUE_AUTH_USERNAME", "admin"))
+PORTAL_AUTH_PASSWORD = os.getenv("PORTAL_AUTH_PASSWORD", os.getenv("QUEUE_AUTH_PASSWORD", "admin123"))
+QUEUE_AUTH_USERNAME = PORTAL_AUTH_USERNAME
+QUEUE_AUTH_PASSWORD = PORTAL_AUTH_PASSWORD
+PORTAL_SECRET_KEY = os.getenv("PORTAL_SECRET_KEY", "lead-gen-engine-secret-key-2026-prod-azure")
+
+# Follower filtering thresholds (Sweet spot: 500+ connections to 5k followers)
+FOLLOWER_SWEET_SPOT_MIN = int(os.getenv("FOLLOWER_SWEET_SPOT_MIN", "500"))
+FOLLOWER_SWEET_SPOT_MAX = int(os.getenv("FOLLOWER_SWEET_SPOT_MAX", "5000"))
+FOLLOWER_EXCLUDE_LIMIT = int(os.getenv("FOLLOWER_EXCLUDE_LIMIT", "5000"))
 
 # ============================================================
 # LinkedIn Resolution — Name Variant Mapping

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily LinkedIn Dispatch — Mobile Queue</title>
+  <link rel="stylesheet" href="/static/portal.css">
+</head>
+<body style="background: #090d16;">
+  <div class="mobile-wrapper">
+    <!-- Sticky Mobile Header -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;margin-bottom:16px;border-bottom:1px solid var(--border);">
+      <div>
+        <h2 style="margin:0;font-size:18px;color:#fff;">Daily Dispatch Queue</h2>
+        <div style="font-size:12px;color:var(--text-secondary);">Native LinkedIn Flow (Zero Bot Footprint)</div>
+      </div>
+      <div>
+        <a href="/" style="font-size:12px;color:#60a5fa;text-decoration:none;padding:4px 8px;background:rgba(59,130,246,0.15);border-radius:6px;">
+          📊 Portal ↗
+        </a>
+      </div>
+    </div>
+
+    <!-- Filter Pills (Sweet Spot vs All) -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <div class="tier-pill queue-tier-pill active" data-tier="SWEET_SPOT_500_5K" onclick="document.querySelectorAll('.queue-tier-pill').forEach(p=>p.classList.remove('active'));this.classList.add('active');loadQueue();">
+        🎯 500–5k Sweet Spot
+      </div>
+      <div class="tier-pill queue-tier-pill" data-tier="ALL" onclick="document.querySelectorAll('.queue-tier-pill').forEach(p=>p.classList.remove('active'));this.classList.add('active');loadQueue();">
+        All Ready
+      </div>
+    </div>
+
+    <!-- Mobile Cards Container -->
+    <div id="queue-cards-container">
+      <div style="text-align:center;padding:40px;color:var(--text-muted);">
+        Loading daily queue...
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/static/portal.js"></script>
+  <script>
+    // Auto-load queue on standalone queue page
+    document.addEventListener('DOMContentLoaded', () => {
+      loadQueue();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lead Gen Engine — Pipeline Portal & Analytics</title>
+  <link rel="stylesheet" href="/static/portal.css">
+</head>
+<body>
+  <!-- Top Navigation -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="brand-icon">⚡</div>
+      <div>
+        <div class="brand-title">Lead Gen Engine</div>
+        <div class="brand-subtitle">Autonomous Pipeline Portal</div>
+      </div>
+    </div>
+
+    <nav class="nav-links">
+      <div class="nav-tab active" data-tab="dashboard">
+        📊 Overview & Controller
+      </div>
+      <div class="nav-tab" data-tab="explorer">
+        🔍 Stages Explorer
+      </div>
+      <div class="nav-tab" data-tab="queue">
+        📱 Mobile Queue <span class="badge-counter" id="nav-queued-badge">0</span>
+      </div>
+      <div class="nav-tab" data-tab="accepted">
+        🏆 Accepted Leads
+      </div>
+    </nav>
+
+    <div class="nav-actions">
+      <div class="db-pill">
+        <span class="db-dot"></span>
+        <span id="db-indicator">{{ db_engine }}</span>
+      </div>
+      <a href="/logout" class="nav-tab" style="padding:6px 12px;font-size:12px;color:var(--text-muted);">
+        Sign Out ↗
+      </a>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- TAB 1: OVERVIEW & PIPELINE CONTROLLER -->
+    <section id="view-dashboard" class="tab-view">
+      <!-- KPI Grid -->
+      <div class="kpi-grid">
+        <div class="kpi-card" style="--card-accent: #3b82f6;">
+          <div class="kpi-header">
+            <span class="kpi-label">Total Leads Ingested</span>
+            <span class="kpi-icon">📁</span>
+          </div>
+          <div class="kpi-value" id="kpi-total-leads">...</div>
+          <div class="kpi-subtext">Ground truth Google Places records</div>
+        </div>
+
+        <div class="kpi-card" style="--card-accent: #f59e0b;">
+          <div class="kpi-header">
+            <span class="kpi-label">Ready in Queue</span>
+            <span class="kpi-icon">🟡</span>
+          </div>
+          <div class="kpi-value" id="kpi-queued-leads">...</div>
+          <div class="kpi-subtext">Verified & ready for 1-tap dispatch</div>
+        </div>
+
+        <div class="kpi-card" style="--card-accent: #10b981;">
+          <div class="kpi-header">
+            <span class="kpi-label">Outreached / Sent</span>
+            <span class="kpi-icon">✅</span>
+          </div>
+          <div class="kpi-value" id="kpi-sent-leads">...</div>
+          <div class="kpi-subtext">Manual LinkedIn invitations sent</div>
+        </div>
+
+        <div class="kpi-card" style="--card-accent: #eab308;">
+          <div class="kpi-header">
+            <span class="kpi-label">Accepted Connections</span>
+            <span class="kpi-icon">🏆</span>
+          </div>
+          <div class="kpi-value" id="kpi-accepted-leads">...</div>
+          <div class="kpi-subtext">Ready for post-connect conversation</div>
+        </div>
+
+        <div class="kpi-card" style="--card-accent: #fbbf24;">
+          <div class="kpi-header">
+            <span class="kpi-label">500–5k Sweet Spot</span>
+            <span class="kpi-icon">🎯</span>
+          </div>
+          <div class="kpi-value" id="kpi-sweet-spot">...</div>
+          <div class="kpi-subtext">High acceptance founder profiles</div>
+        </div>
+
+        <div class="kpi-card" style="--card-accent: #ef4444;">
+          <div class="kpi-header">
+            <span class="kpi-label">API Spend vs Cap</span>
+            <span class="kpi-icon">💳</span>
+          </div>
+          <div class="kpi-value" id="kpi-spend-total">$0.00</div>
+          <div class="kpi-subtext">Under $10.00 hard budget limit</div>
+        </div>
+      </div>
+
+      <!-- Pipeline Controller (NO MORE CLI!) -->
+      <div class="controller-card">
+        <div class="controller-header">
+          <div class="controller-title">
+            <span>⚙️</span>
+            <h3>UI Pipeline Controller</h3>
+            <span class="badge badge-sweet-spot" style="margin-left:8px;">Zero CLI Required</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);">
+            Strict Batch Bounds & AI Cost Gating
+          </div>
+        </div>
+
+        <div class="controller-grid">
+          <!-- Controls Column -->
+          <div>
+            <div class="form-group">
+              <label class="form-label">Pipeline Stage to Execute</label>
+              <select id="run-stage-select" class="form-select">
+                <option value="stage5">Stage 5: Queue Verified Leads (Apply AI Note or Blank)</option>
+                <option value="stage4">Stage 4: Deterministic Activity Gate (Filter Sweet Spot)</option>
+                <option value="stage3">Stage 3: LinkedIn Profile Resolution (Search Dorking)</option>
+                <option value="stage2">Stage 2: Website Crawl & Founder Extraction</option>
+                <option value="pipeline_enrich">Full Flow: Stages 2 → 3 → 4 Enrichment Pipeline</option>
+                <option value="stage1">Stage 1: Ingest Google Places Ground Truth</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Selectable Batch Size (Strictly Enforced — Never Exceeds)</label>
+              <div class="batch-pills">
+                <div class="batch-pill" data-size="5">5</div>
+                <div class="batch-pill" data-size="10">10</div>
+                <div class="batch-pill selected" data-size="15">15 (Daily SOP)</div>
+                <div class="batch-pill" data-size="25">25</div>
+                <div class="batch-pill" data-size="50">50</div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Audience & Follower Filter</label>
+              <select id="run-follower-filter" class="form-select">
+                <option value="ALL">All Available Leads</option>
+                <option value="SWEET_SPOT_500_5K" selected>🎯 Sweet Spot Only (500+ Conn to 5k Followers)</option>
+                <option value="EXCLUDE_OVER_5K">Exclude Macro Accounts (>5,000 / 22k+ Followers)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <div class="ai-toggle-box">
+                <div class="ai-toggle-desc">
+                  <strong>Generate AI Opening Note</strong>
+                  <span>When OFF: Queues for 1-tap Blank Connect ($0.00 OpenAI spend, zero bot risk). When ON: Calls Azure OpenAI strictly for batch.</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="toggle-generate-ai">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <button id="btn-run-stage" class="btn-primary" onclick="triggerPipelineRun()">
+              ▶ Run Selected Batch
+            </button>
+          </div>
+
+          <!-- Live Log Console -->
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span class="form-label" style="margin:0;">Live Execution Telemetry</span>
+              <span style="font-size:11px;color:#10b981;">● Asynchronous Engine Ready</span>
+            </div>
+            <div class="log-console" id="log-console">
+              <div class="log-line">Ready. Select a stage and batch size, then click "Run Selected Batch".</div>
+              <div class="log-line" style="color:var(--text-muted);">Database: {{ db_engine }} | Loaded 2,397 Ground Truth Records.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: STAGES EXPLORER -->
+    <section id="view-explorer" class="tab-view" style="display:none;">
+      <!-- Funnel Filter Bar -->
+      <div class="funnel-bar">
+        <div class="funnel-pill active" data-status="ALL">
+          All Leads <span class="count">—</span>
+        </div>
+        <div class="funnel-pill" data-status="DISCOVERED">
+          🔵 Discovered <span class="count">—</span>
+        </div>
+        <div class="funnel-pill" data-status="ENRICHED">
+          🟢 Enriched <span class="count">—</span>
+        </div>
+        <div class="funnel-pill" data-status="DEAD_WEBSITE">
+          ⚫ Dead Website <span class="count">—</span>
+        </div>
+        <div class="funnel-pill" data-status="NO_LEADERSHIP">
+          ⚫ No Leadership <span class="count">—</span>
+        </div>
+        <div class="funnel-pill" data-status="LINKEDIN_RESOLVED">
+          🔵 LinkedIn Resolved <span class="count">—</span>
+        </div>
+        <div class="funnel-pill" data-status="QUALIFIED_ACTIVE">
+          🟢 Qualified Active <span class="count">—</span>
+        </div>
+        <div class="funnel-pill" data-status="DORMANT_REJECT">
+          ⚫ Dormant Rejects <span class="count">—</span>
+        </div>
+        <div class="funnel-pill" data-status="QUEUED">
+          🟡 Queued <span class="count">—</span>
+        </div>
+        <div class="funnel-pill" data-status="SENT">
+          ✅ Sent <span class="count">—</span>
+        </div>
+        <div class="funnel-pill" data-status="ACCEPTED">
+          🏆 Accepted <span class="count">—</span>
+        </div>
+      </div>
+
+      <!-- Follower Sweet Spot Filter -->
+      <div class="sweet-spot-filter">
+        <span class="filter-title">Follower Filter:</span>
+        <div class="tier-pill tier-filter-pill active" data-tier="ALL">All Profiles</div>
+        <div class="tier-pill tier-filter-pill sweet-spot" data-tier="SWEET_SPOT_500_5K">
+          🎯 Sweet Spot (500–5k) (<span id="tier-count-sweet-spot">0</span>)
+        </div>
+        <div class="tier-pill tier-filter-pill over-5k" data-tier="OVER_5K">
+          ⚠️ Macro / Celebrity (>5k) (<span id="tier-count-over-5k">0</span>)
+        </div>
+        <div class="tier-pill tier-filter-pill" data-tier="UNDER_500">
+          🌱 &lt;500 Connections
+        </div>
+      </div>
+
+      <!-- Leads Data Table -->
+      <div class="table-card">
+        <div class="table-controls">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="table-search-input" class="search-input" placeholder="Search by business name, founder, city, or domain...">
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span id="pagination-info" style="font-size:12px;color:var(--text-muted);">Showing 0 of 0</span>
+            <button class="nav-tab" onclick="prevPage()">← Prev</button>
+            <button class="nav-tab" onclick="nextPage()">Next →</button>
+          </div>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Business Name & City</th>
+                <th>Founder & Title</th>
+                <th>Follower Tier</th>
+                <th>LinkedIn</th>
+                <th>Outreach Ready</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="leads-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: MOBILE ACTION QUEUE (EMBEDDED) -->
+    <section id="view-queue" class="tab-view" style="display:none;">
+      <div class="mobile-wrapper">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <div>
+            <h2 style="margin:0;font-size:20px;">Daily Mobile Queue</h2>
+            <div style="font-size:12px;color:var(--text-secondary);">6-Minute Zero-Bot SOP</div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <div class="tier-pill queue-tier-pill active" data-tier="SWEET_SPOT_500_5K" onclick="document.querySelectorAll('.queue-tier-pill').forEach(p=>p.classList.remove('active'));this.classList.add('active');loadQueue();">
+              🎯 Sweet Spot
+            </div>
+            <div class="tier-pill queue-tier-pill" data-tier="ALL" onclick="document.querySelectorAll('.queue-tier-pill').forEach(p=>p.classList.remove('active'));this.classList.add('active');loadQueue();">
+              All Ready
+            </div>
+          </div>
+        </div>
+
+        <div id="queue-cards-container">
+          <!-- Mobile cards injected here -->
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: ACCEPTED LEADS -->
+    <section id="view-accepted" class="tab-view" style="display:none;">
+      <div style="max-width:800px;margin:0 auto;">
+        <div style="margin-bottom:20px;">
+          <h2>🏆 Post-Connection Conversation Hub</h2>
+          <p style="color:var(--text-secondary);font-size:13px;">Founders who accepted your connection request. Use the talking points below to begin a genuine peer-to-peer conversation.</p>
+        </div>
+        <div id="accepted-leads-container">
+          <!-- Accepted cards injected here -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Lead Details Modal -->
+  <div class="modal-backdrop" id="lead-modal" onclick="if(event.target===this)closeLeadModal()">
+    <div class="modal-window">
+      <button class="modal-close" onclick="closeLeadModal()">✕</button>
+      <div id="lead-modal-body">
+        <!-- Injected dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/static/portal.js"></script>
+</body>
+</html>
