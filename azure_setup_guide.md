@@ -39,7 +39,7 @@ az postgres flexible-server create \
   --name lead-gen-db-$(openssl rand -hex 3) \
   --location eastus \
   --admin-user leadadmin \
-  --admin-password "<YourPassword123!>" \
+  --admin-password "dycuhxdt&*5&:46rfy" \
   --sku-name Standard_B1ms \
   --tier Burstable \
   --storage-size 32 \
@@ -73,7 +73,7 @@ az webapp config appsettings set \
   --resource-group lead-gen-rg \
   --name <your-webapp-name> \
   --settings \
-    DATABASE_URL="postgresql://leadadmin:<YourPassword123!>@<your-postgres-host>:5432/postgres?sslmode=require" \
+    DATABASE_URL="postgresql://leadadmin:dycuhxdt&*5&:46rfy@<your-postgres-host>:5432/postgres?sslmode=require" \
     PORTAL_AUTH_USERNAME="admin" \
     PORTAL_AUTH_PASSWORD="<YourPortalPassword>" \
     PORTAL_SECRET_KEY="$(openssl rand -hex 32)" \
@@ -82,6 +82,7 @@ az webapp config appsettings set \
     AZURE_OPENAI_ENDPOINT="<YourEndpoint>" \
     AZURE_OPENAI_KEY="<YourKey>"
 ```
+*(Note: If your environment requires standard URL encoding for special characters like `&` and `:`, the encoded password is `dycuhxdt%26%2A5%26%3A46rfy`).*
 
 ---
 
@@ -90,7 +91,7 @@ az webapp config appsettings set \
 To copy all **2,397 existing leads** and **5,320 state transitions** from your local machine to Azure PostgreSQL, run this on your local machine:
 
 ```powershell
-.venv\Scripts\python migrate_to_postgres.py --url "postgresql://leadadmin:<YourPassword123!>@<your-postgres-host>:5432/postgres?sslmode=require"
+.venv\Scripts\python migrate_to_postgres.py --url "postgresql://leadadmin:dycuhxdt&*5&:46rfy@<your-postgres-host>:5432/postgres?sslmode=require"
 ```
 
 All 2,397 records and transitions will transfer in under 10 seconds!
