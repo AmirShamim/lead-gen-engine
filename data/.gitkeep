@@ -1,0 +1,2 @@
+# Placeholder to keep the data directory tracked in version control.
+# Real database files (*.db, *.sqlite) are ignored via .gitignore.
