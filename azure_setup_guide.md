@@ -32,7 +32,7 @@ az group create --name lead-gen-rg --location eastus
 ```
 
 ### 2. Create Azure Database for PostgreSQL (Flexible Server)
-> Replace `<YourPassword123!>` with a secure database password of your choice:
+> Configured with database password: `dycuhxdt&*5&:46rfy`
 ```bash
 az postgres flexible-server create \
   --resource-group lead-gen-rg \
@@ -75,7 +75,7 @@ az webapp config appsettings set \
   --settings \
     DATABASE_URL="postgresql://leadadmin:dycuhxdt&*5&:46rfy@<your-postgres-host>:5432/postgres?sslmode=require" \
     PORTAL_AUTH_USERNAME="admin" \
-    PORTAL_AUTH_PASSWORD="<YourPortalPassword>" \
+    PORTAL_AUTH_PASSWORD="dycuhxdt&*5&:46rfy" \
     PORTAL_SECRET_KEY="$(openssl rand -hex 32)" \
     GOOGLE_PLACES_API_KEY="<YourKey>" \
     SERPER_API_KEY="<YourKey>" \
@@ -119,7 +119,7 @@ Open your phone's browser (Safari or Chrome) and navigate to:
 ```
 https://<your-webapp-name>.azurewebsites.net/queue
 ```
-1. Log in with your `PORTAL_AUTH_USERNAME` and `PORTAL_AUTH_PASSWORD`.
+1. Log in with your credentials (`admin` / `dycuhxdt&*5&:46rfy`).
 2. Tap **"Open LinkedIn Profile ↗"** -> opens native LinkedIn app.
 3. Tap **"✓ Sent Blank (Rec.)"** -> marks lead as sent, zero bot pasting footprint.
 4. Done for the day in 6 minutes!
