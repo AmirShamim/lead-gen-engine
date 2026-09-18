@@ -46,13 +46,27 @@ from db import (
 )
 import pipeline_runner
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-app = FastAPI(title="Lead Gen Engine — Portal & Action Queue", version="2.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Ensure database schema is initialized on application startup."""
+    init_db()
+    yield
+
+
+app = FastAPI(
+    title="Lead Gen Engine — Portal & Action Queue",
+    version="2.0.0",
+    lifespan=lifespan,
+)
 
 # Mount static and templates
 _static_dir = _root / "static"

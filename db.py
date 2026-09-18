@@ -126,12 +126,201 @@ CREATE INDEX IF NOT EXISTS idx_transitions_lead ON state_transitions(lead_id);
 """
 
 
+try:
+    import psycopg2
+    import psycopg2.extras
+except ImportError:
+    psycopg2 = None
+
+
+PG_SCHEMA_DDL = """
+CREATE TABLE IF NOT EXISTS leads (
+    id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Stage 1
+    google_place_id TEXT UNIQUE,
+    business_name TEXT NOT NULL,
+    formatted_address TEXT,
+    city TEXT,
+    website_uri TEXT,
+    national_phone TEXT,
+    search_query TEXT,
+
+    -- Stage 2
+    domain TEXT,
+    website_status TEXT,
+    founder_name TEXT,
+    founder_title TEXT,
+    extraction_confidence REAL,
+    business_summary TEXT,
+    general_email TEXT,
+    website_copyright_year INTEGER,
+
+    -- Stage 3
+    linkedin_url TEXT,
+    linkedin_slug TEXT,
+    linkedin_headline TEXT,
+    founder_profile_details TEXT,
+    search_dork_query TEXT,
+    search_dork_snippet TEXT,
+    resolution_confidence REAL,
+
+    -- Stage 4
+    linkedin_connection_count INTEGER,
+    follower_count INTEGER,
+    follower_tier TEXT,
+    has_active_role BOOLEAN,
+    last_activity_date DATE,
+    last_activity_days_ago INTEGER,
+    activity_check_status TEXT,
+    activity_gate_signals TEXT,
+
+    -- Stage 5
+    personalized_note TEXT,
+    note_char_count INTEGER,
+    note_generated_at TIMESTAMP,
+    ab_variant TEXT DEFAULT 'variant_a',
+
+    -- Stage 6
+    queued_at TIMESTAMP,
+    sent_at TIMESTAMP,
+    outreach_type TEXT,
+    connection_accepted_at TIMESTAMP,
+    first_reply_at TIMESTAMP,
+    rejection_reason TEXT,
+    metadata TEXT
+);
+
+CREATE TABLE IF NOT EXISTS api_calls (
+    id SERIAL PRIMARY KEY,
+    api_name TEXT NOT NULL,
+    endpoint TEXT,
+    query TEXT,
+    results_count INTEGER,
+    cost_usd REAL NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS state_transitions (
+    id SERIAL PRIMARY KEY,
+    lead_id TEXT NOT NULL REFERENCES leads(id),
+    from_status TEXT NOT NULL,
+    to_status TEXT NOT NULL,
+    triggered_by_stage TEXT NOT NULL,
+    reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_pg_leads_status ON leads(status);
+CREATE INDEX IF NOT EXISTS idx_pg_leads_city ON leads(city);
+CREATE INDEX IF NOT EXISTS idx_pg_leads_domain ON leads(domain);
+CREATE INDEX IF NOT EXISTS idx_pg_leads_follower_tier ON leads(follower_tier);
+CREATE INDEX IF NOT EXISTS idx_pg_transitions_lead ON state_transitions(lead_id);
+"""
+
+
+def is_postgres(target: str | None = None) -> bool:
+    url = target or DATABASE_URL
+    return bool(url and "postgres" in url.lower())
+
+
+class PostgresCursorWrapper:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        return row
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    @property
+    def description(self):
+        return self._cursor.description
+
+    def close(self):
+        self._cursor.close()
+
+
+class PostgresConnectionWrapper:
+    """Wraps a psycopg2 connection to expose a sqlite3-compatible interface."""
+
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+        self.row_factory = None
+
+    def execute(self, sql: str, params: tuple | list | None = None):
+        if sql.strip().upper().startswith("PRAGMA"):
+            class DummyCursor:
+                def fetchall(self):
+                    return []
+                def fetchone(self):
+                    return None
+            return DummyCursor()
+
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        pg_sql = sql.replace("?", "%s")
+        if params is not None:
+            cur.execute(pg_sql, tuple(params))
+        else:
+            cur.execute(pg_sql)
+        return PostgresCursorWrapper(cur)
+
+    def executemany(self, sql: str, params_seq):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        pg_sql = sql.replace("?", "%s")
+        cur.executemany(pg_sql, [tuple(p) for p in params_seq])
+        return PostgresCursorWrapper(cur)
+
+    def executescript(self, sql_script: str):
+        cur = self._conn.cursor()
+        cur.execute(sql_script)
+        self._conn.commit()
+        cur.close()
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self.rollback()
+        else:
+            self.commit()
+        self.close()
+
+
 # ============================================================
 # Connection Management
 # ============================================================
 
-def get_connection(db_path: str | None = None) -> sqlite3.Connection:
-    """Get a SQLite connection with WAL mode and row factory enabled."""
+def get_connection(db_path: str | None = None):
+    """Get a database connection (Azure PostgreSQL if DATABASE_URL is set, else SQLite WAL)."""
+    if is_postgres(db_path):
+        if not psycopg2:
+            raise RuntimeError(
+                "psycopg2 is not installed. Please install psycopg2-binary to connect to PostgreSQL."
+            )
+        url = db_path if is_postgres(db_path) else DATABASE_URL
+        raw_conn = psycopg2.connect(url)
+        return PostgresConnectionWrapper(raw_conn)
+
     target_path = Path(db_path or DB_PATH)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(target_path))
@@ -144,6 +333,14 @@ def get_connection(db_path: str | None = None) -> sqlite3.Connection:
 
 def init_db(db_path: str | None = None) -> None:
     """Initialize the database schema. Safe to call multiple times (idempotent)."""
+    if is_postgres(db_path):
+        conn = get_connection(db_path)
+        conn.executescript(PG_SCHEMA_DDL)
+        conn.commit()
+        print(f"[OK] Azure PostgreSQL Database initialized with schema")
+        conn.close()
+        return
+
     conn = get_connection(db_path)
     conn.executescript(SCHEMA_DDL)
     
