@@ -1,7 +1,12 @@
-# Environment variables (never commit secrets!)
+# Environment variables and configs (never commit secrets!)
 .env
-.env.local
-.env.*.local
+.env*
+*.env
+.env.example
+
+# Documentation and context files (prevent accidental leakage of keys, links, and configs)
+*.md
+artifacts/
 
 # Databases
 *.db
@@ -26,6 +31,7 @@ venv/
 .venv/
 env/
 ENV/
+antenv/
 
 # IDE & OS files
 .vscode/

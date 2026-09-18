@@ -1,0 +1,13 @@
+# Never bake secrets or environments into container images
+.env*
+*.env
+*.md
+artifacts/
+.git
+.gitignore
+.venv
+antenv
+venv
+__pycache__
+*.pyc
+data/*.db*
