@@ -146,7 +146,7 @@ def login_page(request: Request, error: str | None = None):
     token = request.cookies.get(COOKIE_NAME)
     if verify_session_token(token):
         return RedirectResponse(url="/", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request, "error": error})
+    return templates.TemplateResponse(request=request, name="login.html", context={"error": error})
 
 
 @app.post("/login")
@@ -161,8 +161,9 @@ def process_login(
 
     if not (valid_user and valid_pass):
         return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Invalid username or password. Please try again."},
+            request=request,
+            name="login.html",
+            context={"error": "Invalid username or password. Please try again."},
             status_code=401,
         )
 
@@ -196,15 +197,16 @@ def view_dashboard(request: Request, user: str = Depends(get_current_user)):
     """Render full desktop & tablet analytics portal."""
     db_engine = "Azure PostgreSQL" if (DATABASE_URL and "postgres" in DATABASE_URL.lower()) else "SQLite WAL"
     return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "user": user, "db_engine": db_engine},
+        request=request,
+        name="dashboard.html",
+        context={"user": user, "db_engine": db_engine},
     )
 
 
 @app.get("/queue", response_class=HTMLResponse)
 def view_standalone_queue(request: Request, user: str = Depends(get_current_user)):
     """Render mobile-optimized action queue for smartphone browser dispatch."""
-    return templates.TemplateResponse("queue.html", {"request": request, "user": user})
+    return templates.TemplateResponse(request=request, name="queue.html", context={"user": user})
 
 
 @app.get("/health")
