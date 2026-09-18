@@ -223,8 +223,8 @@ CREATE INDEX IF NOT EXISTS idx_pg_transitions_lead ON state_transitions(lead_id)
 
 
 def is_postgres(target: str | None = None) -> bool:
-    url = target or DATABASE_URL
-    return bool(url and "postgres" in url.lower())
+    target_url = target if (target and "postgres" in str(target).lower()) else DATABASE_URL
+    return bool(target_url and "postgres" in str(target_url).lower())
 
 
 class PostgresCursorWrapper:
@@ -312,16 +312,23 @@ class PostgresConnectionWrapper:
 
 def get_connection(db_path: str | None = None):
     """Get a database connection (Azure PostgreSQL if DATABASE_URL is set, else SQLite WAL)."""
-    if is_postgres(db_path):
+    target_url = db_path if (db_path and "postgres" in str(db_path).lower()) else DATABASE_URL
+    if target_url and "postgres" in str(target_url).lower():
         if not psycopg2:
-            raise RuntimeError(
-                "psycopg2 is not installed. Please install psycopg2-binary to connect to PostgreSQL."
-            )
-        url = db_path if is_postgres(db_path) else DATABASE_URL
-        raw_conn = psycopg2.connect(url)
-        return PostgresConnectionWrapper(raw_conn)
+            print("[WARN] psycopg2 is not installed; falling back to SQLite.")
+        else:
+            clean_url = str(target_url).strip().strip("'").strip('"')
+            try:
+                raw_conn = psycopg2.connect(clean_url)
+                return PostgresConnectionWrapper(raw_conn)
+            except Exception as e:
+                safe_host = clean_url.split("@")[-1].split("/")[0] if "@" in clean_url else "database"
+                print(f"[ERROR] Failed to connect to PostgreSQL ({safe_host}): {e}")
+                print("[WARN] Falling back to SQLite WAL mode to keep web portal online.")
 
-    target_path = Path(db_path or DB_PATH)
+    # Fallback to local SQLite
+    sqlite_file = DB_PATH if (db_path and "postgres" in str(db_path).lower()) else (db_path or DB_PATH)
+    target_path = Path(sqlite_file)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(target_path))
     conn.execute("PRAGMA journal_mode=WAL")
@@ -333,15 +340,14 @@ def get_connection(db_path: str | None = None):
 
 def init_db(db_path: str | None = None) -> None:
     """Initialize the database schema. Safe to call multiple times (idempotent)."""
-    if is_postgres(db_path):
-        conn = get_connection(db_path)
+    conn = get_connection(db_path)
+    if isinstance(conn, PostgresConnectionWrapper):
         conn.executescript(PG_SCHEMA_DDL)
         conn.commit()
-        print(f"[OK] Azure PostgreSQL Database initialized with schema")
+        print("[OK] Azure PostgreSQL Database initialized with schema")
         conn.close()
         return
 
-    conn = get_connection(db_path)
     conn.executescript(SCHEMA_DDL)
     
     # Run migrations for newly added columns on existing databases
